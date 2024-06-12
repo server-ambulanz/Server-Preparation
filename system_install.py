@@ -59,6 +59,9 @@ def create_system_user():
     except subprocess.CalledProcessError:
         subprocess.run(['useradd', '-r', '-s', '/usr/sbin/nologin', sys_username])
         print(f"Systembenutzer {sys_username} wurde erstellt.")
+        os.makedirs('/opt/.ssh', exist_ok=True)
+        subprocess.run(['chown', '-R', f'{sys_username}:', '/opt/.ssh'])
+        print(f"Verzeichnis /opt/.ssh für Systembenutzer {sys_username} wurde erstellt.")
 
 def get_linux_distro():
     distro = ""
@@ -115,6 +118,14 @@ def main():
 
     packages = ['sudo', 'aptitude', 'curl', 'mc']
     check_and_install_packages(distro, packages)
+
+    # Script selbst löschen
+    script_path = os.path.abspath(__file__)
+    print(f"Das Skript {script_path} wird gelöscht und der Server wird neu gestartet.")
+    os.remove(script_path)
+
+    # Server neu starten
+    subprocess.run(['reboot'])
 
 if __name__ == "__main__":
     main()
