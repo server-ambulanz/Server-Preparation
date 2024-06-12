@@ -105,4 +105,3 @@ else:
 pfad = f"/opt/{system_username}/.ssh"
 os.makedirs(pfad, mode=0o700, exist_ok=True)
 subprocess.run(["chown", "-R", f"{system_username}:{system_username}", pfad])
-loo
