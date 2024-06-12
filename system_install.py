@@ -1,107 +1,113 @@
 import os
-import getpass
 import subprocess
+import getpass
+import platform
+import re
 
-# Bildschirm leeren
-subprocess.run(["clear"])
+def is_root():
+    return os.geteuid() == 0
 
-# Prüfen, ob das Skript als Root ausgeführt wird
-if os.geteuid() != 0:
-   print("Dieses Skript muss als Root ausgeführt werden (nicht mit sudo)")
-   exit(1)
+def change_root_password():
+    if input("Möchten Sie das Root-Passwort ändern? (j/n): ").lower() == 'j':
+        while True:
+            new_password = getpass.getpass("Neues Root-Passwort: ")
+            confirm_password = getpass.getpass("Passwort bestätigen: ")
+            if new_password == confirm_password:
+                subprocess.run(['passwd', 'root'], input=new_password.encode(), text=True)
+                print("Root-Passwort geändert.")
+                break
+            else:
+                print("Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
 
-# Fragen, ob das Root-Passwort geändert werden soll
-change_root_password = input("Möchten Sie das Root-Passwort ändern? (j/n): ")
+def change_ssh_port():
+    ssh_config_path = '/etc/ssh/sshd_config'
+    new_port = input("Neuer SSH-Port: ")
+    with open(ssh_config_path, 'r') as file:
+        config = file.read()
 
-if change_root_password.lower() == "j":
-   # Neues Root-Passwort festlegen
-   print("Bitte legen Sie ein neues Root-Passwort fest:")
-   root_password = getpass.getpass()
-   root_password_confirm = getpass.getpass("Bestätigen Sie das Root-Passwort: ")
+    config = re.sub(r'(#Port|Port) \d+', f'Port {new_port}', config)
 
-   while root_password != root_password_confirm:
-       print("Die Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
-       root_password = getpass.getpass("Geben Sie das Root-Passwort ein: ")
-       root_password_confirm = getpass.getpass("Bestätigen Sie das Root-Passwort: ")
+    with open(ssh_config_path, 'w') as file:
+        file.write(config)
 
-   subprocess.run(["passwd", "root"], input=root_password.encode())
+    subprocess.run(['systemctl', 'restart', 'sshd'])
+    print(f"SSH-Port zu {new_port} geändert und SSH-Dienst neu gestartet.")
 
-# Linux-Distribution prüfen
-dist = subprocess.run(["lsb_release", "-ds"], capture_output=True, text=True).stdout.strip()
+def create_user():
+    username = input("Neuen Benutzername: ")
+    try:
+        subprocess.run(['id', '-u', username], check=True)
+        print(f"Benutzer {username} existiert bereits. Fortfahren...")
+    except subprocess.CalledProcessError:
+        while True:
+            password = getpass.getpass("Neues Passwort: ")
+            confirm_password = getpass.getpass("Passwort bestätigen: ")
+            if password == confirm_password:
+                subprocess.run(['useradd', '-m', '-s', '/bin/bash', username])
+                subprocess.run(['passwd', username], input=password.encode(), text=True)
+                print(f"Benutzer {username} wurde erstellt.")
+                break
+            else:
+                print("Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
 
-# Paketquellen aktualisieren
-if "Ubuntu" in dist:
-   subprocess.run(["apt", "update"])
-elif "Debian" in dist:
-   subprocess.run(["apt", "update"])
-elif "CentOS" in dist or "Red Hat" in dist:
-   subprocess.run(["yum", "check-update"])
-else:
-   print(f"Nicht unterstützte Distribution: {dist}")
-   exit(1)
+def create_system_user():
+    sys_username = input("Neuen Systembenutzername: ")
+    try:
+        subprocess.run(['id', '-u', sys_username], check=True)
+        print(f"Systembenutzer {sys_username} existiert bereits. Fortfahren...")
+    except subprocess.CalledProcessError:
+        subprocess.run(['useradd', '-r', '-s', '/usr/sbin/nologin', sys_username])
+        print(f"Systembenutzer {sys_username} wurde erstellt.")
 
-# Updates installieren
-if "Ubuntu" in dist or "Debian" in dist:
-   subprocess.run(["apt", "upgrade", "-y"])
-elif "CentOS" in dist or "Red Hat" in dist:
-   subprocess.run(["yum", "update", "-y"])
+def get_linux_distro():
+    distro, _, _ = platform.linux_distribution()
+    return distro.lower()
 
-# Pakete installieren
-pakete = ["sudo", "aptitude", "curl", "mc"]
-if "Ubuntu" in dist or "Debian" in dist:
-   subprocess.run(["apt", "install", "-y"] + pakete)
-elif "CentOS" in dist or "Red Hat" in dist:
-   subprocess.run(["yum", "install", "-y"] + pakete)
+def update_system(distro):
+    if 'ubuntu' in distro or 'debian' in distro:
+        subprocess.run(['apt', 'update'])
+        subprocess.run(['apt', 'upgrade', '-y'])
+    elif 'centos' in distro or 'fedora' in distro or 'redhat' in distro:
+        subprocess.run(['yum', 'update', '-y'])
+    elif 'suse' in distro or 'opensuse' in distro:
+        subprocess.run(['zypper', 'refresh'])
+        subprocess.run(['zypper', 'update', '-y'])
+    else:
+        print(f"Distribution {distro} wird nicht unterstützt.")
+    print("System wurde aktualisiert.")
 
-# Neuen SSH-Port abfragen
-neuer_ssh_port = input("Geben Sie den neuen SSH-Port ein: ")
+def check_and_install_packages(distro, packages):
+    install_cmd = []
+    if 'ubuntu' in distro or 'debian' in distro:
+        install_cmd = ['apt', 'install', '-y']
+    elif 'centos' in distro or 'fedora' in distro or 'redhat' in distro:
+        install_cmd = ['yum', 'install', '-y']
+    elif 'suse' in distro or 'opensuse' in distro:
+        install_cmd = ['zypper', 'install', '-y']
+    
+    for package in packages:
+        result = subprocess.run(['which', package], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            print(f"{package} wird installiert...")
+            subprocess.run(install_cmd + [package])
+        else:
+            print(f"{package} ist bereits installiert.")
 
-# SSH-Port in /etc/ssh/sshd_config ändern
-with open("/etc/ssh/sshd_config", "r") as f:
-   zeilen = f.readlines()
-with open("/etc/ssh/sshd_config", "w") as f:
-   for zeile in zeilen:
-       if zeile.startswith("Port "):
-           f.write(f"Port {neuer_ssh_port}\n")
-       else:
-           f.write(zeile)
+def main():
+    if not is_root():
+        print("Das Skript muss als Root ausgeführt werden.")
+        return
 
-# SSH-Dienst neu starten
-if "Ubuntu" in dist or "Debian" in dist:
-   subprocess.run(["systemctl", "restart", "sshd"])
-elif "CentOS" in dist or "Red Hat" in dist:
-   subprocess.run(["systemctl", "restart", "sshd"])
+    change_root_password()
+    change_ssh_port()
+    create_user()
+    create_system_user()
+    
+    distro = get_linux_distro()
+    update_system(distro)
 
-# Benutzername für Admin-Benutzer abfragen
-admin_username = input("Geben Sie den Benutzernamen für den Admin-Benutzer ein: ")
+    packages = ['sudo', 'aptitude', 'curl', 'mc']
+    check_and_install_packages(distro, packages)
 
-# Prüfen, ob der Admin-Benutzer bereits existiert
-if subprocess.run(["id", admin_username], capture_output=True).returncode == 0:
-   print(f"Der Benutzer {admin_username} existiert bereits. Fahre fort.")
-else:
-   # Benutzer mit Passwort erstellen und zur sudo-Gruppe hinzufügen
-   passwort = getpass.getpass(f"Geben Sie das Passwort für {admin_username} ein: ")
-   passwort_confirm = getpass.getpass(f"Bestätigen Sie das Passwort für {admin_username}: ")
-
-   while passwort != passwort_confirm:
-       print("Die Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
-       passwort = getpass.getpass(f"Geben Sie das Passwort für {admin_username} ein: ")
-       passwort_confirm = getpass.getpass(f"Bestätigen Sie das Passwort für {admin_username}: ")
-
-   subprocess.run(["useradd", "-m", "-p", passwort, admin_username])
-   subprocess.run(["usermod", "-aG", "sudo", admin_username])
-
-# Benutzername für Systembenutzer abfragen
-system_username = input("Geben Sie den Benutzernamen für den Systembenutzer ein: ")
-
-# Prüfen, ob der Systembenutzer bereits existiert
-if subprocess.run(["id", system_username], capture_output=True).returncode == 0:
-   print(f"Der Benutzer {system_username} existiert bereits. Fahre fort.")
-else:
-   # Systembenutzer ohne Home-Verzeichnis und Passwort erstellen
-   subprocess.run(["useradd", "-r", system_username])
-
-# Verzeichnis /opt/{system_username}/.ssh erstellen und Zugriff auf Systembenutzer beschränken
-pfad = f"/opt/{system_username}/.ssh"
-os.makedirs(pfad, mode=0o700, exist_ok=True)
-subprocess.run(["chown", "-R", f"{system_username}:{system_username}", pfad])
+if __name__ == "__main__":
+    main()
