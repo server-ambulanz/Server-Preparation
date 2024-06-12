@@ -7,6 +7,11 @@ if os.geteuid() != 0:
    print("Dieses Skript muss als Root ausgeführt werden (nicht mit sudo)")
    exit(1)
 
+# Neues Root-Passwort festlegen
+print("Bitte legen Sie ein neues Root-Passwort fest:")
+root_password = getpass.getpass()
+subprocess.run(["passwd", "root"], input=root_password.encode())
+
 # Linux-Distribution prüfen
 dist = subprocess.run(["lsb_release", "-ds"], capture_output=True, text=True).stdout.strip()
 
