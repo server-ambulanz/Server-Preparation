@@ -43,10 +43,10 @@ def create_user():
             password = getpass.getpass("Neues Passwort: ")
             confirm_password = getpass.getpass("Passwort bestätigen: ")
             if password == confirm_password:
-                subprocess.run(['useradd', '-m', '-s', '/bin/bash', username])
+                subprocess.run(['useradd', '-m', '-s', '/bin/bash', '-G', 'sudo', username])
                 process = subprocess.Popen(['passwd', username], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 process.communicate(f"{password}\n{password}\n")
-                print(f"Benutzer {username} wurde erstellt.")
+                print(f"Benutzer {username} wurde erstellt und zur Gruppe 'sudo' hinzugefügt.")
                 break
             else:
                 print("Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
