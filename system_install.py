@@ -1,7 +1,6 @@
 import os
 import subprocess
 import getpass
-import platform
 import re
 
 def is_root():
@@ -60,14 +59,20 @@ def create_system_user():
         print(f"Systembenutzer {sys_username} wurde erstellt.")
 
 def get_linux_distro():
-    distro, _, _ = platform.linux_distribution()
+    distro = ""
+    if os.path.isfile('/etc/os-release'):
+        with open('/etc/os-release', 'r') as f:
+            for line in f:
+                if line.startswith('ID='):
+                    distro = line.strip().split('=')[1].strip('"')
+                    break
     return distro.lower()
 
 def update_system(distro):
     if 'ubuntu' in distro or 'debian' in distro:
         subprocess.run(['apt', 'update'])
         subprocess.run(['apt', 'upgrade', '-y'])
-    elif 'centos' in distro or 'fedora' in distro or 'redhat' in distro:
+    elif 'centos' in distro or 'fedora' in distro or 'rhel' in distro:
         subprocess.run(['yum', 'update', '-y'])
     elif 'suse' in distro or 'opensuse' in distro:
         subprocess.run(['zypper', 'refresh'])
@@ -80,7 +85,7 @@ def check_and_install_packages(distro, packages):
     install_cmd = []
     if 'ubuntu' in distro or 'debian' in distro:
         install_cmd = ['apt', 'install', '-y']
-    elif 'centos' in distro or 'fedora' in distro or 'redhat' in distro:
+    elif 'centos' in distro or 'fedora' in distro or 'rhel' in distro:
         install_cmd = ['yum', 'install', '-y']
     elif 'suse' in distro or 'opensuse' in distro:
         install_cmd = ['zypper', 'install', '-y']
