@@ -12,7 +12,8 @@ def change_root_password():
             new_password = getpass.getpass("Neues Root-Passwort: ")
             confirm_password = getpass.getpass("Passwort bestätigen: ")
             if new_password == confirm_password:
-                subprocess.run(['passwd', 'root'], input=new_password.encode(), text=True)
+                process = subprocess.Popen(['passwd', 'root'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process.communicate(f"{new_password}\n{new_password}\n")
                 print("Root-Passwort geändert.")
                 break
             else:
@@ -43,7 +44,8 @@ def create_user():
             confirm_password = getpass.getpass("Passwort bestätigen: ")
             if password == confirm_password:
                 subprocess.run(['useradd', '-m', '-s', '/bin/bash', username])
-                subprocess.run(['passwd', username], input=password.encode(), text=True)
+                process = subprocess.Popen(['passwd', username], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process.communicate(f"{password}\n{password}\n")
                 print(f"Benutzer {username} wurde erstellt.")
                 break
             else:
