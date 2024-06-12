@@ -10,17 +10,21 @@ if os.geteuid() != 0:
    print("Dieses Skript muss als Root ausgeführt werden (nicht mit sudo)")
    exit(1)
 
-# Neues Root-Passwort festlegen
-print("Bitte legen Sie ein neues Root-Passwort fest:")
-root_password = getpass.getpass()
-root_password_confirm = getpass.getpass("Bestätigen Sie das Root-Passwort: ")
+# Fragen, ob das Root-Passwort geändert werden soll
+change_root_password = input("Möchten Sie das Root-Passwort ändern? (j/n): ")
 
-while root_password != root_password_confirm:
-   print("Die Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
-   root_password = getpass.getpass("Geben Sie das Root-Passwort ein: ")
+if change_root_password.lower() == "j":
+   # Neues Root-Passwort festlegen
+   print("Bitte legen Sie ein neues Root-Passwort fest:")
+   root_password = getpass.getpass()
    root_password_confirm = getpass.getpass("Bestätigen Sie das Root-Passwort: ")
 
-subprocess.run(["passwd", "root"], input=root_password.encode())
+   while root_password != root_password_confirm:
+       print("Die Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
+       root_password = getpass.getpass("Geben Sie das Root-Passwort ein: ")
+       root_password_confirm = getpass.getpass("Bestätigen Sie das Root-Passwort: ")
+
+   subprocess.run(["passwd", "root"], input=root_password.encode())
 
 # Linux-Distribution prüfen
 dist = subprocess.run(["lsb_release", "-ds"], capture_output=True, text=True).stdout.strip()
