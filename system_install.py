@@ -53,14 +53,21 @@ if "Ubuntu" in dist or "Debian" in dist:
 elif "CentOS" in dist or "Red Hat" in dist:
    subprocess.run(["systemctl", "restart", "sshd"])
 
-# Benutzer admjsentuerk mit Passwort erstellen und zur sudo-Gruppe hinzufügen
-passwort = getpass.getpass("Geben Sie das Passwort für admjsentuerk ein: ")
-subprocess.run(["useradd", "-m", "-p", passwort, "admjsentuerk"])
-subprocess.run(["usermod", "-aG", "sudo", "admjsentuerk"])
+# Benutzername für Admin-Benutzer abfragen
+admin_username = input("Geben Sie den Benutzernamen für den Admin-Benutzer ein: ")
 
-# Benutzer admapp-agent ohne Home-Verzeichnis und Passwort erstellen
-subprocess.run(["useradd", "-r", "admapp-agent"])
+# Benutzer mit Passwort erstellen und zur sudo-Gruppe hinzufügen
+passwort = getpass.getpass(f"Geben Sie das Passwort für {admin_username} ein: ")
+subprocess.run(["useradd", "-m", "-p", passwort, admin_username])
+subprocess.run(["usermod", "-aG", "sudo", admin_username])
 
-# Verzeichnis /opt/adm-agent/.ssh erstellen und Zugriff auf admapp-agent beschränken
-os.makedirs("/opt/adm-agent/.ssh", mode=0o700, exist_ok=True)
-subprocess.run(["chown", "-R", "admapp-agent:admapp-agent", "/opt/adm-agent/.ssh"])
+# Benutzername für Systembenutzer abfragen
+system_username = input("Geben Sie den Benutzernamen für den Systembenutzer ein: ")
+
+# Systembenutzer ohne Home-Verzeichnis und Passwort erstellen
+subprocess.run(["useradd", "-r", system_username])
+
+# Verzeichnis /opt/{system_username}/.ssh erstellen und Zugriff auf Systembenutzer beschränken
+pfad = f"/opt/{system_username}/.ssh"
+os.makedirs(pfad, mode=0o700, exist_ok=True)
+subprocess.run(["chown", "-R", f"{system_username}:{system_username}", pfad])
