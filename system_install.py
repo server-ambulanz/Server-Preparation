@@ -2,6 +2,9 @@ import os
 import getpass
 import subprocess
 
+# Bildschirm leeren
+subprocess.run(["clear"])
+
 # Prüfen, ob das Skript als Root ausgeführt wird
 if os.geteuid() != 0:
    print("Dieses Skript muss als Root ausgeführt werden (nicht mit sudo)")
@@ -10,6 +13,13 @@ if os.geteuid() != 0:
 # Neues Root-Passwort festlegen
 print("Bitte legen Sie ein neues Root-Passwort fest:")
 root_password = getpass.getpass()
+root_password_confirm = getpass.getpass("Bestätigen Sie das Root-Passwort: ")
+
+while root_password != root_password_confirm:
+   print("Die Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
+   root_password = getpass.getpass("Geben Sie das Root-Passwort ein: ")
+   root_password_confirm = getpass.getpass("Bestätigen Sie das Root-Passwort: ")
+
 subprocess.run(["passwd", "root"], input=root_password.encode())
 
 # Linux-Distribution prüfen
@@ -61,16 +71,31 @@ elif "CentOS" in dist or "Red Hat" in dist:
 # Benutzername für Admin-Benutzer abfragen
 admin_username = input("Geben Sie den Benutzernamen für den Admin-Benutzer ein: ")
 
-# Benutzer mit Passwort erstellen und zur sudo-Gruppe hinzufügen
-passwort = getpass.getpass(f"Geben Sie das Passwort für {admin_username} ein: ")
-subprocess.run(["useradd", "-m", "-p", passwort, admin_username])
-subprocess.run(["usermod", "-aG", "sudo", admin_username])
+# Prüfen, ob der Admin-Benutzer bereits existiert
+if subprocess.run(["id", admin_username], capture_output=True).returncode == 0:
+   print(f"Der Benutzer {admin_username} existiert bereits. Fahre fort.")
+else:
+   # Benutzer mit Passwort erstellen und zur sudo-Gruppe hinzufügen
+   passwort = getpass.getpass(f"Geben Sie das Passwort für {admin_username} ein: ")
+   passwort_confirm = getpass.getpass(f"Bestätigen Sie das Passwort für {admin_username}: ")
+
+   while passwort != passwort_confirm:
+       print("Die Passwörter stimmen nicht überein. Bitte versuchen Sie es erneut.")
+       passwort = getpass.getpass(f"Geben Sie das Passwort für {admin_username} ein: ")
+       passwort_confirm = getpass.getpass(f"Bestätigen Sie das Passwort für {admin_username}: ")
+
+   subprocess.run(["useradd", "-m", "-p", passwort, admin_username])
+   subprocess.run(["usermod", "-aG", "sudo", admin_username])
 
 # Benutzername für Systembenutzer abfragen
 system_username = input("Geben Sie den Benutzernamen für den Systembenutzer ein: ")
 
-# Systembenutzer ohne Home-Verzeichnis und Passwort erstellen
-subprocess.run(["useradd", "-r", system_username])
+# Prüfen, ob der Systembenutzer bereits existiert
+if subprocess.run(["id", system_username], capture_output=True).returncode == 0:
+   print(f"Der Benutzer {system_username} existiert bereits. Fahre fort.")
+else:
+   # Systembenutzer ohne Home-Verzeichnis und Passwort erstellen
+   subprocess.run(["useradd", "-r", system_username])
 
 # Verzeichnis /opt/{system_username}/.ssh erstellen und Zugriff auf Systembenutzer beschränken
 pfad = f"/opt/{system_username}/.ssh"
