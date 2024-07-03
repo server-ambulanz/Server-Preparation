@@ -111,7 +111,7 @@ def main():
     change_root_password()
     change_ssh_port()
     create_user()
-    create_system_user()
+    # create_system_user()
     
     distro = get_linux_distro()
     update_system(distro)
