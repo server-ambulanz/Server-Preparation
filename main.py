@@ -4,7 +4,13 @@ import ipaddress
 from typing import Optional
 import CloudFlare
 from dotenv import load_dotenv
-import time
+import signal
+
+def signal_handler(sig, frame):
+    print("\nCtrl+C pressed. Exiting gracefully.")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 def check_root():
     """Überprüft, ob das Skript mit Root-Rechten ausgeführt wird."""
@@ -57,7 +63,6 @@ def extract_srv_numbers(records: list, domain: str) -> set:
 
 def find_next_available_number(existing_numbers: set) -> Optional[int]:
     """Findet die nächste verfügbare srv-Nummer."""
-    # Beginnt bei 100 (1-99 ausgeschlossen)
     current = 100
     
     while current <= 999:
@@ -65,7 +70,6 @@ def find_next_available_number(existing_numbers: set) -> Optional[int]:
             return current
         current += 1
     
-    # Wenn 999 erreicht ist, gib 1000 zurück
     if current > 999:
         return 1000
     
@@ -99,51 +103,45 @@ def add_dns_record(cf: CloudFlare.CloudFlare, zone_id: str, domain: str, subdoma
         sys.exit(1)
 
 def main():
-    # Überprüfung der Root-Rechte
     check_root()
-
-    # Bildschirm leeren
     clear_screen()
     
     print("=== DNS Checker and IP Management Script ===\n")
     
-    # Konfiguration laden
     api_token, zone_id, domain = load_config()
-    
-    # Cloudflare-Client initialisieren
     cf = CloudFlare.CloudFlare(token=api_token)
-    
-    # Vorhandene Einträge abrufen
     records = get_existing_records(cf, zone_id)
     
-    # IP-Adresse vom Benutzer abfragen
-    while True:
-        ip = input("Please enter the IP address of the server: ").strip()
-        if is_valid_public_ip(ip):
-            break
-        else:
-            print("Invalid IP address. Please enter a valid public IPv4 address.")
+    attempts = 0
+    while attempts < 3:
+        try:
+            ip = input("Please enter the IP address of the server: ").strip()
+            if is_valid_public_ip(ip):
+                if ip_exists_in_records(records, ip):
+                    raise ValueError(f"The IP address {ip} is already registered in the DNS records.")
+                break
+            else:
+                raise ValueError("Invalid IP address. Please enter a valid public IPv4 address.")
+        except ValueError as e:
+            attempts += 1
+            clear_screen()
+            print(f"Error: {str(e)}")
+            if attempts < 3:
+                print(f"Attempts remaining: {3 - attempts}")
+            else:
+                print("Maximum attempts reached. Exiting.")
+                sys.exit(1)
     
-    # Prüfen, ob IP bereits in Einträgen existiert
-    if ip_exists_in_records(records, ip):
-        print(f"Error: The IP address {ip} is already registered in the DNS records.")
-        sys.exit(1)
-    
-    # Vorhandene srv-Nummern extrahieren
     existing_numbers = extract_srv_numbers(records, domain)
-    
-    # Nächste verfügbare Nummer finden
     next_number = find_next_available_number(existing_numbers)
     
     if next_number is None:
         print("No available srv numbers found")
         return
     
-    # Neue Subdomain formatieren
     new_subdomain = f"srv{str(next_number).zfill(3)}"
     full_domain = f"{new_subdomain}.{domain}"
     
-    # Neuen DNS-Eintrag hinzufügen
     add_dns_record(cf, zone_id, domain, new_subdomain, ip)
     
     print(f"\nSuccessfully added new server:")
