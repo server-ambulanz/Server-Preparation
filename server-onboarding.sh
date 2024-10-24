@@ -6,9 +6,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Vault Konfiguration
-VAULT_ADDR="${VAULT_ADDR:-https://vault.example.com:8200}"
-VAULT_PATH="secret/dns-manager"  # Pfad in Vault wo die Secrets liegen
+# HCP Konfiguration
+HCP_ORG_ID="1a640aa3-ae1e-4d34-b58b-92881f5af946"
+HCP_PROJECT_ID="a39ee14a-3c45-4262-8c69-af9ee9bb6362"
+HCP_APP_NAME="DNS"
 
 # Signal Handler für Ctrl+C
 trap ctrl_c INT
@@ -31,58 +32,62 @@ check_root() {
     fi
 }
 
-# Überprüft Vault-Verbindung und Authentifizierung
-check_vault_connection() {
-    if [ -z "$VAULT_ADDR" ]; then
-        echo -e "${RED}VAULT_ADDR environment variable is not set.${NC}"
+# Überprüft HCP-Verbindung und Authentifizierung
+check_hcp_connection() {
+    if [ -z "$HCP_CLIENT_ID" ]; then
+        echo -e "${RED}HCP_CLIENT_ID environment variable is not set.${NC}"
         exit 1
     fi
 
-    if [ -z "$VAULT_TOKEN" ]; then
-        echo -e "${RED}VAULT_TOKEN environment variable is not set.${NC}"
+    if [ -z "$HCP_CLIENT_SECRET" ]; then
+        echo -e "${RED}HCP_CLIENT_SECRET environment variable is not set.${NC}"
         exit 1
     fi
 
-    # Überprüfe Vault-Status
-    local vault_status
-    vault_status=$(curl -s -o /dev/null -w "%{http_code}" \
-        -H "X-Vault-Token: ${VAULT_TOKEN}" \
-        "${VAULT_ADDR}/v1/sys/health")
+    # Generate HCP API token
+    HCP_API_TOKEN=$(curl --silent --location "https://auth.idp.hashicorp.com/oauth2/token" \
+        --header "Content-Type: application/x-www-form-urlencoded" \
+        --data-urlencode "client_id=$HCP_CLIENT_ID" \
+        --data-urlencode "client_secret=$HCP_CLIENT_SECRET" \
+        --data-urlencode "grant_type=client_credentials" \
+        --data-urlencode "audience=https://api.hashicorp.cloud" | jq -r .access_token)
 
-    if [ "$vault_status" != "200" ] && [ "$vault_status" != "429" ]; then
-        echo -e "${RED}Unable to connect to Vault server. Status code: ${vault_status}${NC}"
+    if [ -z "$HCP_API_TOKEN" ] || [ "$HCP_API_TOKEN" = "null" ]; then
+        echo -e "${RED}Failed to obtain HCP API token.${NC}"
         exit 1
     fi
+
+    echo -e "${GREEN}Successfully authenticated with HCP.${NC}"
 }
 
-# Lädt Secrets aus Vault‚
+# Lädt Secrets aus HCP
 load_secrets() {
-    echo -e "${YELLOW}Fetching secrets from Vault...${NC}"
+    echo -e "${YELLOW}Fetching secrets from HCP...${NC}"
     
-    # Hole Secrets von Vault
+    # Hole Secrets von HCP
     local response
-    response=$(curl -s \
-        -H "X-Vault-Token: ${VAULT_TOKEN}" \
-        "${VAULT_ADDR}/v1/${VAULT_PATH}/data/cloudflare")
+    response=$(curl --silent --location \
+        "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/${HCP_ORG_ID}/projects/${HCP_PROJECT_ID}/apps/${HCP_APP_NAME}/open" \
+        --header "Authorization: Bearer ${HCP_API_TOKEN}")
 
     # Überprüfe die Antwort
-    if ! echo "$response" | grep -q '"data"'; then
-        echo -e "${RED}Failed to fetch secrets from Vault: $response${NC}"
+    if ! echo "$response" | jq -e . >/dev/null 2>&1; then
+        echo -e "${RED}Failed to fetch secrets from HCP: $response${NC}"
         exit 1
     fi
 
     # Extrahiere die Secrets
-    CLOUDFLARE_API_TOKEN=$(echo "$response" | jq -r '.data.data.api_token')
-    CLOUDFLARE_ZONE_ID=$(echo "$response" | jq -r '.data.data.zone_id')
-    DOMAIN=$(echo "$response" | jq -r '.data.data.domain')
+    CLOUDFLARE_API_TOKEN=$(echo "$response" | jq -r '.secrets.cloudflare.api_token')
+    CLOUDFLARE_ZONE_ID=$(echo "$response" | jq -r '.secrets.cloudflare.zone_id')
+    DOMAIN=$(echo "$response" | jq -r '.secrets.cloudflare.domain')
 
     # Überprüfe, ob alle benötigten Secrets vorhanden sind
     if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ZONE_ID" ] || [ -z "$DOMAIN" ]; then
-        echo -e "${RED}Missing required secrets in Vault.${NC}"
+        echo -e "${RED}Missing required secrets in HCP.${NC}"
         exit 1
     fi
 
-    echo -e "${GREEN}Successfully loaded secrets from Vault.${NC}"
+    echo -e "${GREEN}Successfully loaded secrets from HCP.${NC}"
 }
 
 # Erkennt die Linux-Distribution
@@ -283,10 +288,10 @@ main() {
     # System aktualisieren und Abhängigkeiten überprüfen
     update_system_and_check_dependencies
     
-    # Vault-Verbindung überprüfen
-    check_vault_connection
+    # HCP-Verbindung überprüfen
+    check_hcp_connection
     
-    # Secrets von Vault laden
+    # Secrets von HCP laden
     load_secrets
     
     # IP-Adresse abfragen (max. 3 Versuche)
