@@ -151,6 +151,6 @@ def main():
     print(f"\nSuccessfully added new server:")
     print(f"Subdomain: {full_domain}")
     print(f"IP Address: {ip}")
-
+"""Findet die nächste verfügbare srv-Nummer.- Test"""
 if __name__ == "__main__":
     main()
