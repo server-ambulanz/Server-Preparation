@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:  # Ermöglicht manuelles Auslösen
 
 env:
   B2_BUCKET: ${{ secrets.B2_BUCKET_NAME }}
@@ -17,43 +18,77 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Komplette Git-Historie abrufen
+          fetch-depth: 0
+      
+      - name: Debug Environment
+        run: |
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Branch: $GITHUB_REF"
+          echo "Workspace: $GITHUB_WORKSPACE"
+          echo "B2 Bucket: $B2_BUCKET"
+          echo "B2 Account ID exists: ${{ env.B2_ACCOUNT_ID != '' }}"
+          echo "Current directory content:"
+          ls -la
       
       - name: Get current date
         id: date
-        run: echo "date=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_OUTPUT
+        run: |
+          echo "date=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_OUTPUT
+          echo "Generated date: $(date +'%Y-%m-%d_%H-%M-%S')"
       
       - name: Create archive name
         id: archive
         run: |
           REPO_NAME=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f2)
           echo "filename=${REPO_NAME}_${{ steps.date.outputs.date }}.tar.gz" >> $GITHUB_OUTPUT
+          echo "Generated filename: ${REPO_NAME}_${{ steps.date.outputs.date }}.tar.gz"
       
       - name: Create TAR archive
         run: |
-          tar -czf ${{ steps.archive.outputs.filename }} \
+          tar -czvf ${{ steps.archive.outputs.filename }} \
               --exclude='.git' \
               --exclude='.github' \
               --exclude='node_modules' \
               --exclude='vendor' \
               .
+          echo "Archive size:"
+          ls -lh ${{ steps.archive.outputs.filename }}
       
       - name: Install b2 CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip
           pip3 install --upgrade b2
+          b2 version
       
-      - name: Configure b2 CLI
+      - name: Test B2 Authentication
         run: |
-          b2 authorize-account ${{ env.B2_ACCOUNT_ID }} ${{ env.B2_APP_KEY }}
+          if b2 authorize-account ${{ env.B2_ACCOUNT_ID }} ${{ env.B2_APP_KEY }}; then
+            echo "B2 authentication successful"
+          else
+            echo "B2 authentication failed"
+            exit 1
+          fi
+      
+      - name: List B2 Buckets (Debug)
+        run: b2 list-buckets
       
       - name: Upload to Backblaze B2
         run: |
+          echo "Starting upload to bucket: ${{ env.B2_BUCKET }}"
           b2 upload-file \
             ${{ env.B2_BUCKET }} \
             ${{ steps.archive.outputs.filename }} \
             backups/${{ steps.archive.outputs.filename }}
+          echo "Upload completed"
+      
+      - name: Verify Upload
+        run: |
+          echo "Verifying upload..."
+          b2 list-file-names ${{ env.B2_BUCKET }} backups/ 1
       
       - name: Cleanup
-        run: rm ${{ steps.archive.outputs.filename }}
+        if: always()  # Wird auch bei Fehlern ausgeführt
+        run: |
+          echo "Cleaning up..."
+          rm -f ${{ steps.archive.outputs.filename }}
