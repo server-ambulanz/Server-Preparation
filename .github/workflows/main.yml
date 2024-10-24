@@ -1,11 +1,9 @@
 name: Backup to Backblaze B2
 
 on:
-  push:
-    branches:
-      - main
-      - master
-  workflow_dispatch:
+  schedule:
+    - cron: '0 */2 * * *'  # Alle 2 Stunden
+  workflow_dispatch:        # Manuelle Ausführung bleibt erhalten
 
 env:
   B2_BUCKET: ${{ secrets.B2_BUCKET_NAME }}
@@ -31,18 +29,27 @@ jobs:
           echo "Current directory content:"
           ls -la
       
-      - name: Get current date
-        id: date
+      - name: Get Version Number
+        id: version
         run: |
-          echo "date=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_OUTPUT
-          echo "Generated date: $(date +'%Y-%m-%d_%H-%M-%S')"
+          # Erstelle Versionsdatei wenn sie nicht existiert
+          if ! b2 download-file-by-name ${{ env.B2_BUCKET }} version.txt version.txt 2>/dev/null; then
+            echo "1" > version.txt
+          fi
+          
+          # Lese aktuelle Version und erhöhe sie um 1
+          VERSION=$(($(cat version.txt) + 1))
+          echo $VERSION > version.txt
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Lade neue Versionsnummer hoch
+          b2 upload-file ${{ env.B2_BUCKET }} version.txt version.txt
       
       - name: Create archive name
         id: archive
         run: |
-          REPO_NAME=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f2)
-          echo "filename=${REPO_NAME}_${{ steps.date.outputs.date }}.tar.gz" >> $GITHUB_OUTPUT
-          echo "Generated filename: ${REPO_NAME}_${{ steps.date.outputs.date }}.tar.gz"
+          echo "filename=server-onboarding_V${{ steps.version.outputs.version }}.tar.gz" >> $GITHUB_OUTPUT
+          echo "Generated filename: server-onboarding_V${{ steps.version.outputs.version }}.tar.gz"
       
       - name: Create backup directory
         run: |
@@ -82,14 +89,10 @@ jobs:
             backups/${{ steps.archive.outputs.filename }}
           echo "Upload completed"
       
-      - name: Verify Upload
-        run: |
-          echo "Verifying upload..."
-          b2 bucket ls --no-progress ${{ env.B2_BUCKET }} backups/
-      
       - name: Cleanup
         if: always()
         run: |
           echo "Cleaning up..."
           rm -f ${{ steps.archive.outputs.filename }}
+          rm -f version.txt
           rm -rf /tmp/repo-backup
