@@ -85,7 +85,7 @@ jobs:
       - name: Verify Upload
         run: |
           echo "Verifying upload..."
-          b2 file list --recursive --bucket ${{ env.B2_BUCKET }} backups/ --limit 1
+          b2 bucket ls --no-progress ${{ env.B2_BUCKET }} backups/
       
       - name: Cleanup
         if: always()
