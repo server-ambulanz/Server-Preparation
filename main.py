@@ -118,7 +118,11 @@ def main():
             ip = input("Please enter the IP address of the server: ").strip()
             if is_valid_public_ip(ip):
                 if ip_exists_in_records(records, ip):
-                    raise ValueError(f"The IP address {ip} is already registered in the DNS records.")
+                    clear_screen()
+                    print(f"Error: The IP address {ip} is already registered in the DNS records.")
+                    print("Please contact support for assistance with this issue.")
+                    print("Exiting the script.")
+                    sys.exit(1)
                 break
             else:
                 raise ValueError("Invalid IP address. Please enter a valid public IPv4 address.")
