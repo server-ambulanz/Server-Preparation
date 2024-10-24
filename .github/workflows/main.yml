@@ -1,0 +1,28 @@
+name: Upload to Backblaze B2
+
+# Der Workflow wird bei jedem Push auf den Hauptbranch ausgelöst
+on:
+  push:
+    branches:
+      - main  # oder der Branch, den du verwenden möchtest
+
+jobs:
+  upload_to_b2:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3  # Holt den Code des Repos
+
+    - name: Set up Rclone
+      run: |
+        curl https://rclone.org/install.sh | sudo bash  # Installiert Rclone
+        rclone config create b2-backup b2 account "${{ secrets.B2_ACCOUNT_ID }}" key "${{ secrets.B2_APPLICATION_KEY }}"
+
+    - name: Upload to Backblaze B2
+      run: |
+        rclone sync --progress ./ b2-backup:${{ secrets.B2_BUCKET_NAME }}/
+      env:
+        B2_ACCOUNT_ID: ${{ secrets.B2_ACCOUNT_ID }}
+        B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
