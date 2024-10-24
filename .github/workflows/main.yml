@@ -1,28 +1,59 @@
-name: Upload to Backblaze B2
+name: Backup to Backblaze B2
 
-# Der Workflow wird bei jedem Push auf den Hauptbranch ausgelöst
 on:
   push:
     branches:
-      - main  # oder der Branch, den du verwenden möchtest
+      - main
+
+env:
+  B2_BUCKET: ${{ secrets.B2_BUCKET_NAME }}
+  B2_ACCOUNT_ID: ${{ secrets.B2_ACCOUNT_ID }}
+  B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
 
 jobs:
-  upload_to_b2:
+  backup:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3  # Holt den Code des Repos
-
-    - name: Set up Rclone
-      run: |
-        curl https://rclone.org/install.sh | sudo bash  # Installiert Rclone
-        rclone config create b2-backup b2 account "${{ secrets.B2_ACCOUNT_ID }}" key "${{ secrets.B2_APPLICATION_KEY }}"
-
-    - name: Upload to Backblaze B2
-      run: |
-        rclone sync --progress ./ b2-backup:${{ secrets.B2_BUCKET_NAME }}/
-      env:
-        B2_ACCOUNT_ID: ${{ secrets.B2_ACCOUNT_ID }}
-        B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
-        B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Komplette Git-Historie abrufen
+      
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_OUTPUT
+      
+      - name: Create archive name
+        id: archive
+        run: |
+          REPO_NAME=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f2)
+          echo "filename=${REPO_NAME}_${{ steps.date.outputs.date }}.tar.gz" >> $GITHUB_OUTPUT
+      
+      - name: Create TAR archive
+        run: |
+          tar -czf ${{ steps.archive.outputs.filename }} \
+              --exclude='.git' \
+              --exclude='.github' \
+              --exclude='node_modules' \
+              --exclude='vendor' \
+              .
+      
+      - name: Install b2 CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install --upgrade b2
+      
+      - name: Configure b2 CLI
+        run: |
+          b2 authorize-account ${{ env.B2_ACCOUNT_ID }} ${{ env.B2_APP_KEY }}
+      
+      - name: Upload to Backblaze B2
+        run: |
+          b2 upload-file \
+            ${{ env.B2_BUCKET }} \
+            ${{ steps.archive.outputs.filename }} \
+            backups/${{ steps.archive.outputs.filename }}
+      
+      - name: Cleanup
+        run: rm ${{ steps.archive.outputs.filename }}
