@@ -73,9 +73,6 @@ jobs:
         run: |
           echo "${{ env.B2_APP_KEY }}" | b2 account authorize ${{ env.B2_ACCOUNT_ID }}
       
-      - name: List B2 Buckets (Debug)
-        run: b2 list-buckets
-      
       - name: Upload to Backblaze B2
         run: |
           echo "Starting upload to bucket: ${{ env.B2_BUCKET }}"
@@ -88,7 +85,7 @@ jobs:
       - name: Verify Upload
         run: |
           echo "Verifying upload..."
-          b2 list-file-names ${{ env.B2_BUCKET }} backups/ 1
+          b2 file list --recursive --bucket ${{ env.B2_BUCKET }} backups/ --limit 1
       
       - name: Cleanup
         if: always()
