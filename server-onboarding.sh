@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Dies ist nur eine vorübergehende Lösung, bis das Problem gefixt ist.
+export HCP_CLIENT_ID=vWmfAIlLerIaCkKWxyow3vYQFvAbNK8N
+export HCP_CLIENT_SECRET=gfUtw2AUuqTtJQCyUGqBCm0YF6XjatDh5dI8TnntKFkiMI8oDcY_vfUOq-oUrMPZ
+
 # Globale Variablen für Farbausgabe
 RED='\033[0;31m'
 GREEN='\033[0;32m'
