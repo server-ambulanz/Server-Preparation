@@ -1,3 +1,0 @@
-python-dotenv==1.0.0
-cloudflare==2.8.15
-dnspython==2.4.2
