@@ -6,6 +6,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Vault Konfiguration
+VAULT_ADDR="${VAULT_ADDR:-https://vault.example.com:8200}"
+VAULT_PATH="secret/dns-manager"  # Pfad in Vault wo die Secrets liegen
+
 # Signal Handler für Ctrl+C
 trap ctrl_c INT
 
@@ -27,6 +31,60 @@ check_root() {
     fi
 }
 
+# Überprüft Vault-Verbindung und Authentifizierung
+check_vault_connection() {
+    if [ -z "$VAULT_ADDR" ]; then
+        echo -e "${RED}VAULT_ADDR environment variable is not set.${NC}"
+        exit 1
+    fi
+
+    if [ -z "$VAULT_TOKEN" ]; then
+        echo -e "${RED}VAULT_TOKEN environment variable is not set.${NC}"
+        exit 1
+    fi
+
+    # Überprüfe Vault-Status
+    local vault_status
+    vault_status=$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/sys/health")
+
+    if [ "$vault_status" != "200" ] && [ "$vault_status" != "429" ]; then
+        echo -e "${RED}Unable to connect to Vault server. Status code: ${vault_status}${NC}"
+        exit 1
+    fi
+}
+
+# Lädt Secrets aus Vault‚
+load_secrets() {
+    echo -e "${YELLOW}Fetching secrets from Vault...${NC}"
+    
+    # Hole Secrets von Vault
+    local response
+    response=$(curl -s \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/${VAULT_PATH}/data/cloudflare")
+
+    # Überprüfe die Antwort
+    if ! echo "$response" | grep -q '"data"'; then
+        echo -e "${RED}Failed to fetch secrets from Vault: $response${NC}"
+        exit 1
+    fi
+
+    # Extrahiere die Secrets
+    CLOUDFLARE_API_TOKEN=$(echo "$response" | jq -r '.data.data.api_token')
+    CLOUDFLARE_ZONE_ID=$(echo "$response" | jq -r '.data.data.zone_id')
+    DOMAIN=$(echo "$response" | jq -r '.data.data.domain')
+
+    # Überprüfe, ob alle benötigten Secrets vorhanden sind
+    if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ZONE_ID" ] || [ -z "$DOMAIN" ]; then
+        echo -e "${RED}Missing required secrets in Vault.${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}Successfully loaded secrets from Vault.${NC}"
+}
+
 # Erkennt die Linux-Distribution
 get_distribution() {
     if [ -f /etc/os-release ]; then
@@ -41,8 +99,8 @@ get_distribution() {
     fi
 }
 
-# Aktualisiert die Paketquellen und installiert curl wenn nötig
-update_system_and_check_curl() {
+# Aktualisiert die Paketquellen und installiert benötigte Pakete
+update_system_and_check_dependencies() {
     local distro=$(get_distribution)
     echo -e "${YELLOW}Detected distribution: $distro${NC}"
     
@@ -54,13 +112,11 @@ update_system_and_check_curl() {
                 exit 1
             }
             
-            if ! command -v curl &> /dev/null; then
-                echo -e "${YELLOW}Installing curl...${NC}"
-                apt-get install -y curl || {
-                    echo -e "${RED}Failed to install curl.${NC}"
-                    exit 1
-                }
-            fi
+            echo -e "${YELLOW}Installing required packages...${NC}"
+            apt-get install -y curl jq || {
+                echo -e "${RED}Failed to install required packages.${NC}"
+                exit 1
+            }
             ;;
             
         "centos"|"rhel"|"fedora"|"rocky"|"almalinux")
@@ -70,13 +126,11 @@ update_system_and_check_curl() {
                 exit 1
             }
             
-            if ! command -v curl &> /dev/null; then
-                echo -e "${YELLOW}Installing curl...${NC}"
-                dnf install -y curl || yum install -y curl || {
-                    echo -e "${RED}Failed to install curl.${NC}"
-                    exit 1
-                }
-            fi
+            echo -e "${YELLOW}Installing required packages...${NC}"
+            dnf install -y curl jq || yum install -y curl jq || {
+                echo -e "${RED}Failed to install required packages.${NC}"
+                exit 1
+            }
             ;;
             
         "opensuse"|"suse")
@@ -86,13 +140,11 @@ update_system_and_check_curl() {
                 exit 1
             }
             
-            if ! command -v curl &> /dev/null; then
-                echo -e "${YELLOW}Installing curl...${NC}"
-                zypper install -y curl || {
-                    echo -e "${RED}Failed to install curl.${NC}"
-                    exit 1
-                }
-            fi
+            echo -e "${YELLOW}Installing required packages...${NC}"
+            zypper install -y curl jq || {
+                echo -e "${RED}Failed to install required packages.${NC}"
+                exit 1
+            }
             ;;
             
         "arch"|"manjaro")
@@ -102,39 +154,23 @@ update_system_and_check_curl() {
                 exit 1
             }
             
-            if ! command -v curl &> /dev/null; then
-                echo -e "${YELLOW}Installing curl...${NC}"
-                pacman -S --noconfirm curl || {
-                    echo -e "${RED}Failed to install curl.${NC}"
-                    exit 1
-                }
-            fi
+            echo -e "${YELLOW}Installing required packages...${NC}"
+            pacman -S --noconfirm curl jq || {
+                echo -e "${RED}Failed to install required packages.${NC}"
+                exit 1
+            }
             ;;
             
         *)
-            echo -e "${RED}Unsupported distribution. Please install curl manually if needed.${NC}"
-            if ! command -v curl &> /dev/null; then
-                echo -e "${RED}curl is required but not installed.${NC}"
+            echo -e "${RED}Unsupported distribution. Please install curl and jq manually if needed.${NC}"
+            if ! command -v curl &> /dev/null || ! command -v jq &> /dev/null; then
+                echo -e "${RED}curl and jq are required but not installed.${NC}"
                 exit 1
             fi
             ;;
     esac
     
-    echo -e "${GREEN}System update completed and curl is available.${NC}"
-}
-
-# Lädt die Konfiguration aus .env Datei
-load_config() {
-    if [ -f .env ]; then
-        source .env
-        if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ZONE_ID" ] || [ -z "$DOMAIN" ]; then
-            echo -e "${RED}Missing required environment variables in .env file.${NC}"
-            exit 1
-        fi
-    else
-        echo -e "${RED}.env file not found.${NC}"
-        exit 1
-    fi
+    echo -e "${GREEN}System update completed and all dependencies are available.${NC}"
 }
 
 # Prüft, ob eine IP-Adresse gültig ist
@@ -244,10 +280,14 @@ main() {
     
     echo -e "=== DNS Checker and IP Management Script ===\n"
     
-    # System aktualisieren und curl überprüfen
-    update_system_and_check_curl
+    # System aktualisieren und Abhängigkeiten überprüfen
+    update_system_and_check_dependencies
     
-    load_config
+    # Vault-Verbindung überprüfen
+    check_vault_connection
+    
+    # Secrets von Vault laden
+    load_secrets
     
     # IP-Adresse abfragen (max. 3 Versuche)
     attempts=0
