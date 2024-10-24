@@ -80,14 +80,27 @@ load_secrets() {
         exit 1
     fi
 
-    # Extrahiere die Secrets
-    CLOUDFLARE_API_TOKEN=$(echo "$response" | jq -r '.secrets.cloudflare.api_token')
-    CLOUDFLARE_ZONE_ID=$(echo "$response" | jq -r '.secrets.cloudflare.zone_id')
-    DOMAIN=$(echo "$response" | jq -r '.secrets.cloudflare.domain')
+    # Debug output (optional)
+    # echo "Response from HCP: $response"
+
+    # Extrahiere die Secrets - angepasst an das tatsächliche Format der API-Antwort
+    CLOUDFLARE_API_TOKEN=$(echo "$response" | jq -r '.data[] | select(.name=="CLOUDFLARE_API_TOKEN") | .value // null')
+    CLOUDFLARE_ZONE_ID=$(echo "$response" | jq -r '.data[] | select(.name=="CLOUDFLARE_ZONE_ID") | .value // null')
+    DOMAIN=$(echo "$response" | jq -r '.data[] | select(.name=="DOMAIN") | .value // null')
 
     # Überprüfe, ob alle benötigten Secrets vorhanden sind
-    if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ZONE_ID" ] || [ -z "$DOMAIN" ]; then
-        echo -e "${RED}Missing required secrets in HCP.${NC}"
+    if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ "$CLOUDFLARE_API_TOKEN" = "null" ]; then
+        echo -e "${RED}Missing CLOUDFLARE_API_TOKEN in HCP secrets.${NC}"
+        exit 1
+    fi
+
+    if [ -z "$CLOUDFLARE_ZONE_ID" ] || [ "$CLOUDFLARE_ZONE_ID" = "null" ]; then
+        echo -e "${RED}Missing CLOUDFLARE_ZONE_ID in HCP secrets.${NC}"
+        exit 1
+    fi
+
+    if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "null" ]; then
+        echo -e "${RED}Missing DOMAIN in HCP secrets.${NC}"
         exit 1
     fi
 
