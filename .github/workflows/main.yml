@@ -69,14 +69,9 @@ jobs:
           pip3 install --upgrade b2
           b2 version
       
-      - name: Test B2 Authentication
+      - name: Authenticate with B2
         run: |
-          if b2 authorize-account ${{ env.B2_ACCOUNT_ID }} ${{ env.B2_APP_KEY }}; then
-            echo "B2 authentication successful"
-          else
-            echo "B2 authentication failed"
-            exit 1
-          fi
+          echo "${{ env.B2_APP_KEY }}" | b2 account authorize ${{ env.B2_ACCOUNT_ID }}
       
       - name: List B2 Buckets (Debug)
         run: b2 list-buckets
