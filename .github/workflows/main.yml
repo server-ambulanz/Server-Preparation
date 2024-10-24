@@ -4,7 +4,8 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Ermöglicht manuelles Auslösen
+      - master
+  workflow_dispatch:
 
 env:
   B2_BUCKET: ${{ secrets.B2_BUCKET_NAME }}
@@ -43,14 +44,21 @@ jobs:
           echo "filename=${REPO_NAME}_${{ steps.date.outputs.date }}.tar.gz" >> $GITHUB_OUTPUT
           echo "Generated filename: ${REPO_NAME}_${{ steps.date.outputs.date }}.tar.gz"
       
+      - name: Create backup directory
+        run: |
+          mkdir -p /tmp/repo-backup
+          cp -r . /tmp/repo-backup/
+          find /tmp/repo-backup -name ".git" -type d -exec rm -rf {} +
+          find /tmp/repo-backup -name ".github" -type d -exec rm -rf {} +
+          find /tmp/repo-backup -name "node_modules" -type d -exec rm -rf {} +
+          find /tmp/repo-backup -name "vendor" -type d -exec rm -rf {} +
+      
       - name: Create TAR archive
         run: |
-          tar -czvf ${{ steps.archive.outputs.filename }} \
-              --exclude='.git' \
-              --exclude='.github' \
-              --exclude='node_modules' \
-              --exclude='vendor' \
-              .
+          cd /tmp
+          tar -czf ${{ steps.archive.outputs.filename }} repo-backup/
+          mv ${{ steps.archive.outputs.filename }} $GITHUB_WORKSPACE/
+          cd $GITHUB_WORKSPACE
           echo "Archive size:"
           ls -lh ${{ steps.archive.outputs.filename }}
       
@@ -88,7 +96,8 @@ jobs:
           b2 list-file-names ${{ env.B2_BUCKET }} backups/ 1
       
       - name: Cleanup
-        if: always()  # Wird auch bei Fehlern ausgeführt
+        if: always()
         run: |
           echo "Cleaning up..."
           rm -f ${{ steps.archive.outputs.filename }}
+          rm -rf /tmp/repo-backup
