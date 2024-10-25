@@ -50,7 +50,6 @@ jobs:
       - name: Remove existing backup files
         run: |
           echo "Removing existing backup files..."
-          # Verwende b2 rm statt ls und delete-file-version
           b2 rm --recursive "b2://${{ env.B2_BUCKET }}/scripts/" || true
 
       - name: Upload files to B2
@@ -59,11 +58,12 @@ jobs:
           # Rekursives Hochladen aller Dateien
           for file in $(find . -type f); do
             if [[ $file != ./.* ]]; then  # Ignoriere versteckte Dateien/Ordner
-              echo "Uploading: $file"
-              b2 upload-file \
-                "${{ env.B2_BUCKET }}" \
+              filename=$(basename "$file")  # Extrahiere nur den Dateinamen ohne Pfad
+              echo "Uploading: $filename"
+              b2 file upload \
+                --no-progress \
                 "$file" \
-                "scripts/$file"
+                "b2://${{ env.B2_BUCKET }}/scripts/$filename"
             fi
           done
           echo "Upload completed"
