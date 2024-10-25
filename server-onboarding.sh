@@ -38,17 +38,11 @@ check_root() {
 
 # Überprüft HCP-Verbindung und Authentifizierung
 check_hcp_connection() {
-    if [ -z "$HCP_CLIENT_ID" ]; then
-        echo -e "${RED}HCP_CLIENT_ID environment variable is not set.${NC}"
+    if [ -z "$HCP_CLIENT_ID" ] || [ -z "$HCP_CLIENT_SECRET" ]; then
+        echo -e "${RED}HCP credentials are not set.${NC}"
         exit 1
     fi
 
-    if [ -z "$HCP_CLIENT_SECRET" ]; then
-        echo -e "${RED}HCP_CLIENT_SECRET environment variable is not set.${NC}"
-        exit 1
-    fi
-
-    # Generate HCP API token
     HCP_API_TOKEN=$(curl --silent --location "https://auth.idp.hashicorp.com/oauth2/token" \
         --header "Content-Type: application/x-www-form-urlencoded" \
         --data-urlencode "client_id=$HCP_CLIENT_ID" \
@@ -68,39 +62,17 @@ check_hcp_connection() {
 load_secrets() {
     echo -e "${YELLOW}Fetching secrets from HCP...${NC}"
     
-    # Hole Secrets von HCP
     local response
     response=$(curl --silent --location \
         "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/${HCP_ORG_ID}/projects/${HCP_PROJECT_ID}/apps/${HCP_APP_NAME}/open" \
         --header "Authorization: Bearer ${HCP_API_TOKEN}")
+    
+    CLOUDFLARE_API_TOKEN=$(echo "$response" | jq -r '.secrets[] | select(.name=="CLOUDFLARE_API_TOKEN") | .version.value // empty')
+    CLOUDFLARE_ZONE_ID=$(echo "$response" | jq -r '.secrets[] | select(.name=="CLOUDFLARE_ZONE_ID") | .version.value // empty')
+    DOMAIN=$(echo "$response" | jq -r '.secrets[] | select(.name=="DOMAIN") | .version.value // empty')
 
-    # Überprüfe die Antwort
-    if ! echo "$response" | jq -e . >/dev/null 2>&1; then
-        echo -e "${RED}Failed to fetch secrets from HCP: $response${NC}"
-        exit 1
-    fi
-
-    # Debug output (optional)
-    # echo "Response from HCP: $response"
-
-    # Extrahiere die Secrets - angepasst an das tatsächliche Format der API-Antwort
-    CLOUDFLARE_API_TOKEN=$(echo "$response" | jq -r '.data[] | select(.name=="CLOUDFLARE_API_TOKEN") | .value // null')
-    CLOUDFLARE_ZONE_ID=$(echo "$response" | jq -r '.data[] | select(.name=="CLOUDFLARE_ZONE_ID") | .value // null')
-    DOMAIN=$(echo "$response" | jq -r '.data[] | select(.name=="DOMAIN") | .value // null')
-
-    # Überprüfe, ob alle benötigten Secrets vorhanden sind
-    if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ "$CLOUDFLARE_API_TOKEN" = "null" ]; then
-        echo -e "${RED}Missing CLOUDFLARE_API_TOKEN in HCP secrets.${NC}"
-        exit 1
-    fi
-
-    if [ -z "$CLOUDFLARE_ZONE_ID" ] || [ "$CLOUDFLARE_ZONE_ID" = "null" ]; then
-        echo -e "${RED}Missing CLOUDFLARE_ZONE_ID in HCP secrets.${NC}"
-        exit 1
-    fi
-
-    if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "null" ]; then
-        echo -e "${RED}Missing DOMAIN in HCP secrets.${NC}"
+    if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ZONE_ID" ] || [ -z "$DOMAIN" ]; then
+        echo -e "${RED}Failed to load required secrets from HCP.${NC}"
         exit 1
     fi
 
@@ -128,63 +100,18 @@ update_system_and_check_dependencies() {
     
     case "$distro" in
         "ubuntu"|"debian")
-            echo -e "${YELLOW}Updating package sources...${NC}"
-            apt-get update || {
-                echo -e "${RED}Failed to update package sources.${NC}"
-                exit 1
-            }
-            
-            echo -e "${YELLOW}Installing required packages...${NC}"
-            apt-get install -y curl jq || {
-                echo -e "${RED}Failed to install required packages.${NC}"
-                exit 1
-            }
+            apt-get update && apt-get install -y curl jq
             ;;
-            
         "centos"|"rhel"|"fedora"|"rocky"|"almalinux")
-            echo -e "${YELLOW}Updating package sources...${NC}"
-            dnf check-update || yum check-update || {
-                echo -e "${RED}Failed to update package sources.${NC}"
-                exit 1
-            }
-            
-            echo -e "${YELLOW}Installing required packages...${NC}"
-            dnf install -y curl jq || yum install -y curl jq || {
-                echo -e "${RED}Failed to install required packages.${NC}"
-                exit 1
-            }
+            dnf check-update && dnf install -y curl jq || yum check-update && yum install -y curl jq
             ;;
-            
         "opensuse"|"suse")
-            echo -e "${YELLOW}Updating package sources...${NC}"
-            zypper refresh || {
-                echo -e "${RED}Failed to update package sources.${NC}"
-                exit 1
-            }
-            
-            echo -e "${YELLOW}Installing required packages...${NC}"
-            zypper install -y curl jq || {
-                echo -e "${RED}Failed to install required packages.${NC}"
-                exit 1
-            }
+            zypper refresh && zypper install -y curl jq
             ;;
-            
         "arch"|"manjaro")
-            echo -e "${YELLOW}Updating package sources...${NC}"
-            pacman -Sy || {
-                echo -e "${RED}Failed to update package sources.${NC}"
-                exit 1
-            }
-            
-            echo -e "${YELLOW}Installing required packages...${NC}"
-            pacman -S --noconfirm curl jq || {
-                echo -e "${RED}Failed to install required packages.${NC}"
-                exit 1
-            }
+            pacman -Sy && pacman -S --noconfirm curl jq
             ;;
-            
         *)
-            echo -e "${RED}Unsupported distribution. Please install curl and jq manually if needed.${NC}"
             if ! command -v curl &> /dev/null || ! command -v jq &> /dev/null; then
                 echo -e "${RED}curl and jq are required but not installed.${NC}"
                 exit 1
@@ -198,12 +125,10 @@ update_system_and_check_dependencies() {
 # Prüft, ob eine IP-Adresse gültig ist
 is_valid_public_ip() {
     local ip=$1
-    # Prüft IPv4 Format
     if [[ ! $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
         return 1
     fi
     
-    # Prüft, ob die Zahlen im gültigen Bereich sind
     local IFS='.'
     read -ra ADDR <<< "$ip"
     for i in "${ADDR[@]}"; do
@@ -212,13 +137,7 @@ is_valid_public_ip() {
         fi
     done
     
-    # Prüft, ob es sich um eine private IP handelt
-    if [[ $ip =~ ^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.) ]]; then
-        return 1
-    fi
-    
-    # Prüft auf lokale und spezielle IPs
-    if [[ $ip =~ ^(127\.|0\.|169\.254\.|224\.) ]]; then
+    if [[ $ip =~ ^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|127\.|0\.|169\.254\.|224\.) ]]; then
         return 1
     fi
     
@@ -235,9 +154,9 @@ check_existing_ip() {
         -H "Content-Type: application/json")
     
     if echo "$response" | grep -q "\"content\":\"$ip\""; then
-        return 0 # IP exists
+        return 0
     else
-        return 1 # IP does not exist
+        return 1
     fi
 }
 
@@ -250,14 +169,12 @@ find_next_srv_number() {
         -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
         -H "Content-Type: application/json")
     
-    # Extrahiert alle existierenden srv Nummern
     while read -r number; do
         if [ ! -z "$number" ]; then
             existing_numbers+=($number)
         fi
     done < <(echo "$response" | grep -o 'srv[0-9]\{3\}' | grep -o '[0-9]\{3\}')
     
-    # Findet die nächste verfügbare Nummer ab 100
     for ((i=100; i<=999; i++)); do
         if [[ ! " ${existing_numbers[@]} " =~ " ${i} " ]]; then
             echo $i
@@ -302,16 +219,10 @@ main() {
     
     echo -e "=== DNS Checker and IP Management Script ===\n"
     
-    # System aktualisieren und Abhängigkeiten überprüfen
     update_system_and_check_dependencies
-    
-    # HCP-Verbindung überprüfen
     check_hcp_connection
-    
-    # Secrets von HCP laden
     load_secrets
     
-    # IP-Adresse abfragen (max. 3 Versuche)
     attempts=0
     while [ $attempts -lt 3 ]; do
         read -p "Please enter the IP address of the server: " ip
@@ -321,7 +232,6 @@ main() {
                 clear_screen
                 echo -e "${RED}Error: The IP address $ip is already registered in the DNS records.${NC}"
                 echo "Please contact support for assistance with this issue."
-                echo "Exiting the script."
                 exit 1
             fi
             break
@@ -338,17 +248,14 @@ main() {
         fi
     done
     
-    # Nächste verfügbare srv Nummer finden
     next_number=$(find_next_srv_number)
     if [ -z "$next_number" ]; then
         echo -e "${RED}No available srv numbers found${NC}"
         exit 1
     fi
     
-    # Neue Subdomain erstellen
     new_subdomain="srv$(printf "%03d" $next_number)"
     
-    # DNS-Eintrag hinzufügen
     if add_dns_record "$new_subdomain" "$ip"; then
         echo -e "\n${GREEN}Successfully added new server:${NC}"
         echo "Subdomain: ${new_subdomain}.${DOMAIN}"
@@ -356,5 +263,4 @@ main() {
     fi
 }
 
-# Skript ausführen
 main
