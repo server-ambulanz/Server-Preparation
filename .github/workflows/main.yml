@@ -56,5 +56,5 @@ jobs:
       - name: Upload files to B2
         run: |
           echo "Starting upload to bucket: ${{ env.B2_BUCKET }}"
-          b2 sync --delete --excludeAllSymlinks . "b2://${{ env.B2_BUCKET }}/backups/"
+          b2 sync --delete . "b2://${{ env.B2_BUCKET }}/backups/"
           echo "Upload completed"
