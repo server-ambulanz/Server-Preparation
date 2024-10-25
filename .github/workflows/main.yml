@@ -50,11 +50,12 @@ jobs:
 
       - name: Remove existing backup files
         run: |
-          echo "Removing existing backup files..."
-          b2 rm --recursive "b2://${{ env.B2_BUCKET }}/backups/" || true
+          echo "Removing existing files in 'scripts' directory..."
+          b2 rm --recursive "b2://${{ env.B2_BUCKET }}/scripts/" || true
 
       - name: Upload files to B2
         run: |
           echo "Starting upload to bucket: ${{ env.B2_BUCKET }}"
-          b2 sync --delete . "b2://${{ env.B2_BUCKET }}/backups/"
+          # Synchronisiert den Inhalt, ohne .env und .gitignore zu inkludieren
+          b2 sync --delete --excludeRegex '(\.env|\.gitignore)$' . "b2://${{ env.B2_BUCKET }}/scripts/"
           echo "Upload completed"
