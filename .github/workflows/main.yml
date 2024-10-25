@@ -45,26 +45,25 @@ jobs:
       
       - name: Authenticate with B2
         run: |
-          echo "${{ env.B2_APP_KEY }}" | b2 account authorize ${{ env.B2_ACCOUNT_ID }}
+          echo "${{ env.B2_APP_KEY }}" | b2 authorize-account ${{ env.B2_ACCOUNT_ID }}
       
-      - name: Check and delete existing backup files
+      - name: Remove existing backup files
         run: |
-          # Liste alle Dateien im Backup-Verzeichnis
-          echo "Checking for existing files..."
-          EXISTING_FILES=$(b2 ls --recursive --json "${{ env.B2_BUCKET }}" "backups/")
+          echo "Debug: Showing b2 version and available commands"
+          b2 version
+          b2 --help
           
-          # Lösche alle gefundenen Dateien
-          if [ ! -z "$EXISTING_FILES" ]; then
-            echo "Deleting existing backup files..."
-            echo "$EXISTING_FILES" | while read -r line; do
-              FILE_NAME=$(echo "$line" | jq -r '.fileName')
-              FILE_ID=$(echo "$line" | jq -r '.fileId')
-              if [[ $FILE_NAME == backups/* ]]; then
-                echo "Deleting: $FILE_NAME"
-                b2 delete-file-version "$FILE_NAME" "$FILE_ID"
-              fi
-            done
-          fi
+          echo "Checking for existing files..."
+          echo "Listing files in backup directory..."
+          b2 ls "${{ env.B2_BUCKET }}" "backups/" | while read -r line; do
+            if [[ ! -z "$line" ]]; then
+              echo "Processing line: $line"
+              FILE_NAME=$(echo "$line" | awk '{print $1}')
+              FILE_ID=$(echo "$line" | awk '{print $2}')
+              echo "Deleting: $FILE_NAME (ID: $FILE_ID)"
+              b2 delete-file-version "$FILE_NAME" "$FILE_ID" || true
+            fi
+          done
 
       - name: Upload files to B2
         run: |
