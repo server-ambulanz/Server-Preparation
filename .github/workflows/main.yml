@@ -3,7 +3,7 @@ name: Backup to Backblaze B2
 on:
   schedule:
     - cron: '0 */2 * * *'  # Alle 2 Stunden
-  workflow_dispatch:
+  workflow_dispatch:        # Manuelle Ausführung bleibt erhalten
 
 env:
   B2_BUCKET: ${{ secrets.B2_BUCKET_NAME }}
@@ -13,7 +13,6 @@ env:
 jobs:
   backup:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -29,36 +28,42 @@ jobs:
           echo "B2 Account ID exists: ${{ env.B2_ACCOUNT_ID != '' }}"
           echo "Current directory content:"
           ls -la
-
+      
       - name: Prepare backup directory
         run: |
           find . -name ".git" -type d -exec rm -rf {} +
           find . -name ".github" -type d -exec rm -rf {} +
           find . -name "node_modules" -type d -exec rm -rf {} +
           find . -name "vendor" -type d -exec rm -rf {} +
-
-      - name: Install B2 CLI
+      
+      - name: Install b2 CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip
           pip3 install --upgrade b2
           b2 version
-
+      
       - name: Authenticate with B2
         run: |
-          echo "${{ env.B2_APP_KEY }}" | b2 account authorize ${{ env.B2_ACCOUNT_ID }}
-
-      - name: Remove existing files in B2 bucket
+          echo "${{ env.B2_APP_KEY }}" | b2 authorize-account ${{ env.B2_ACCOUNT_ID }}
+      
+      - name: Remove existing backup files
         run: |
-          echo "Removing existing files in 'scripts' directory..."
+          echo "Removing existing backup files..."
+          # Verwende b2 rm statt ls und delete-file-version
           b2 rm --recursive "b2://${{ env.B2_BUCKET }}/scripts/" || true
-
-      - name: Exclude .env and .gitignore from upload
-        run: |
-          rm -f .env .gitignore
 
       - name: Upload files to B2
         run: |
           echo "Starting upload to bucket: ${{ env.B2_BUCKET }}"
-          b2 sync --delete . "b2://${{ env.B2_BUCKET }}/scripts/"
+          # Rekursives Hochladen aller Dateien
+          for file in $(find . -type f); do
+            if [[ $file != ./.* ]]; then  # Ignoriere versteckte Dateien/Ordner
+              echo "Uploading: $file"
+              b2 upload-file \
+                "${{ env.B2_BUCKET }}" \
+                "$file" \
+                "scripts/$file"
+            fi
+          done
           echo "Upload completed"
