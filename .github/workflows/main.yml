@@ -48,14 +48,17 @@ jobs:
         run: |
           echo "${{ env.B2_APP_KEY }}" | b2 account authorize ${{ env.B2_ACCOUNT_ID }}
 
-      - name: Remove existing backup files
+      - name: Remove existing files in B2 bucket
         run: |
           echo "Removing existing files in 'scripts' directory..."
           b2 rm --recursive "b2://${{ env.B2_BUCKET }}/scripts/" || true
 
+      - name: Exclude .env and .gitignore from upload
+        run: |
+          rm -f .env .gitignore
+
       - name: Upload files to B2
         run: |
           echo "Starting upload to bucket: ${{ env.B2_BUCKET }}"
-          # Synchronisiert den Inhalt, ohne .env und .gitignore zu inkludieren
-          b2 sync --delete --excludeRegex '(\.env|\.gitignore)$' . "b2://${{ env.B2_BUCKET }}/scripts/"
+          b2 sync --delete . "b2://${{ env.B2_BUCKET }}/scripts/"
           echo "Upload completed"
