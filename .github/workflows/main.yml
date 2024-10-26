@@ -62,8 +62,9 @@ jobs:
               echo "Uploading: $filename"
               b2 file upload \
                 --no-progress \
+                "${{ env.B2_BUCKET }}" \
                 "$file" \
-                "b2://${{ env.B2_BUCKET }}/scripts/$filename"
+                "scripts/$filename"
             fi
           done
           echo "Upload completed"
