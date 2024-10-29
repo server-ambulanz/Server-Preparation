@@ -1,8 +1,8 @@
 name: Backup to Backblaze B2
 
 on:
-  schedule:
-    - cron: '0 */2 * * *'  # Alle 2 Stunden
+  # schedule:
+  #   - cron: '0 */2 * * *'  # Alle 2 Stunden
   workflow_dispatch:        # Manuelle Ausführung bleibt erhalten
 
 env:
