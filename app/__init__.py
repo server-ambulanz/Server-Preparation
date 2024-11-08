@@ -1,11 +1,10 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from authlib.integrations.flask_client import OAuth
+from .auth import setup_auth
 
 db = SQLAlchemy()
 migrate = Migrate()
-oauth = OAuth()
 
 def create_app():
     app = Flask(__name__)
@@ -13,9 +12,11 @@ def create_app():
     
     db.init_app(app)
     migrate.init_app(app, db)
-    oauth.init_app(app)
     
-    from app.routes import main
+    setup_auth(app)
+    
+    from .routes import main, auth
     app.register_blueprint(main)
+    app.register_blueprint(auth)
     
     return app
