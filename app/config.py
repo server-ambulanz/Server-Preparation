@@ -1,7 +1,9 @@
+# app/config.py
 import os
 from dotenv import load_dotenv
 
 # Lade Umgebungsvariablen aus .env Datei
+basedir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 load_dotenv()
 
 class Config:
@@ -11,7 +13,7 @@ class Config:
     
     # Datenbank Konfiguration
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'sqlite:///database/server-onboarding.db'
+        f'sqlite:///{os.path.join(basedir, "database", "server-onboarding.db")}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Auth0 Konfiguration
